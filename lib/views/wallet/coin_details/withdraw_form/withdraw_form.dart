@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:web_dex/generated/codegen_loader.g.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:komodo_defi_sdk/komodo_defi_sdk.dart';
 import 'package:komodo_defi_types/komodo_defi_types.dart';
@@ -131,7 +133,7 @@ class NetworkErrorDisplay extends StatelessWidget {
       child: onRetry != null
           ? TextButton(
               onPressed: onRetry,
-              child: const Text('Retry'),
+              child: Text(LocaleKeys.retryButtonText.tr()),
             )
           : null,
     );
@@ -186,7 +188,7 @@ class PreviewWithdrawButton extends StatelessWidget {
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : const Text('Preview Withdrawal'),
+            : Text(LocaleKeys.previewWithdrawButtonText.tr()),
       ),
     );
   }
@@ -313,7 +315,7 @@ class WithdrawFormFillSection extends StatelessWidget {
                         .read<WithdrawFormBloc>()
                         .add(WithdrawFormCustomFeeEnabled(enabled ?? false)),
                   ),
-                  const Text('Custom network fee'),
+                  Text(LocaleKeys.withdrawFormFillSectionCheckbox.tr()),
                 ],
               ),
               if (state.isCustomFee && state.customFee != null) ...[
@@ -397,7 +399,7 @@ class WithdrawFormConfirmSection extends StatelessWidget {
                     onPressed: () => context
                         .read<WithdrawFormBloc>()
                         .add(const WithdrawFormCancelled()),
-                    child: const Text('Back'),
+                    child: Text(LocaleKeys.back.tr()),
                   ),
                 ),
                 const SizedBox(width: 16),

@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart';
+import 'package:web_dex/generated/codegen_loader.g.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -83,7 +85,7 @@ class BitrefillInAppWebviewButtonState
         final height = size.height * 0.8;
 
         return AlertDialog(
-          title: const Text('Bitrefill'),
+          title: Text(LocaleKeys.bitrefill.tr()),
           content: SizedBox(
             width: width,
             height: height,
@@ -97,7 +99,7 @@ class BitrefillInAppWebviewButtonState
           ),
           actions: <Widget>[
             TextButton(
-              child: const Text('Close'),
+              child: Text(LocaleKeys.close.tr()),
               onPressed: () {
                 Navigator.of(context).pop();
               },
