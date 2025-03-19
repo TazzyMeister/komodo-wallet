@@ -4,6 +4,7 @@ import 'package:app_theme/app_theme.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:komodo_defi_sdk/komodo_defi_sdk.dart';
 import 'package:komodo_ui_kit/komodo_ui_kit.dart';
 import 'package:web_dex/app_config/app_config.dart';
 import 'package:web_dex/bloc/assets_overview/bloc/asset_overview_bloc.dart';
@@ -13,7 +14,6 @@ import 'package:web_dex/bloc/bridge_form/bridge_event.dart';
 import 'package:web_dex/bloc/cex_market_data/portfolio_growth/portfolio_growth_bloc.dart';
 import 'package:web_dex/bloc/cex_market_data/profit_loss/profit_loss_bloc.dart';
 import 'package:web_dex/bloc/coins_bloc/coins_bloc.dart';
-import 'package:web_dex/bloc/coins_bloc/coins_repo.dart';
 import 'package:web_dex/bloc/taker_form/taker_bloc.dart';
 import 'package:web_dex/bloc/taker_form/taker_event.dart';
 import 'package:web_dex/common/screen.dart';
@@ -21,14 +21,14 @@ import 'package:web_dex/dispatchers/popup_dispatcher.dart';
 import 'package:web_dex/generated/codegen_loader.g.dart';
 import 'package:web_dex/model/authorize_mode.dart';
 import 'package:web_dex/model/coin.dart';
+import 'package:web_dex/model/kdf_auth_metadata_extension.dart';
 import 'package:web_dex/model/wallet.dart';
 import 'package:web_dex/router/state/routing_state.dart';
 import 'package:web_dex/router/state/wallet_state.dart';
 import 'package:web_dex/views/common/page_header/page_header.dart';
 import 'package:web_dex/views/common/pages/page_layout.dart';
 import 'package:web_dex/views/dex/dex_helpers.dart';
-import 'package:web_dex/views/wallet/coin_details/coin_details_info/charts/portfolio_growth_chart.dart';
-import 'package:web_dex/views/wallet/coin_details/coin_details_info/charts/portfolio_profit_loss_chart.dart';
+import 'package:web_dex/views/wallet/coin_details/coin_details_info/charts/animated_portfolio_charts.dart';
 import 'package:web_dex/views/wallet/wallet_page/charts/coin_prices_chart.dart';
 import 'package:web_dex/views/wallet/wallet_page/wallet_main/active_coins_list.dart';
 import 'package:web_dex/views/wallet/wallet_page/wallet_main/all_coins_list.dart';
@@ -38,7 +38,7 @@ import 'package:web_dex/views/wallets_manager/wallets_manager_events_factory.dar
 import 'package:web_dex/views/wallets_manager/wallets_manager_wrapper.dart';
 
 class WalletMain extends StatefulWidget {
-  const WalletMain({Key? key = const Key('wallet-page')}) : super(key: key);
+  const WalletMain({super.key = const Key('wallet-page')});
 
   @override
   State<WalletMain> createState() => _WalletMainState();
@@ -120,39 +120,12 @@ class _WalletMainState extends State<WalletMain>
                               height: 340,
                               child: PriceChartPage(key: Key('price-chart')),
                             )
-                          else ...[
-                            Card(
-                              child: TabBar(
-                                controller: _tabController,
-                                tabs: [
-                                  Tab(text: LocaleKeys.portfolioGrowth.tr()),
-                                  Tab(text: LocaleKeys.profitAndLoss.tr()),
-                                ],
-                              ),
+                          else
+                            AnimatedPortfolioCharts(
+                              key: const Key('animated_portfolio_charts'),
+                              tabController: _tabController,
+                              walletCoinsFiltered: walletCoinsFiltered,
                             ),
-                            SizedBox(
-                              height: 340,
-                              child: TabBarView(
-                                controller: _tabController,
-                                children: [
-                                  SizedBox(
-                                    width: double.infinity,
-                                    height: 340,
-                                    child: PortfolioGrowthChart(
-                                      initialCoins: walletCoinsFiltered,
-                                    ),
-                                  ),
-                                  SizedBox(
-                                    width: double.infinity,
-                                    height: 340,
-                                    child: PortfolioProfitLossChart(
-                                      initialCoins: walletCoinsFiltered,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
                           const Gap(8),
                         ],
                       ),
@@ -181,14 +154,21 @@ class _WalletMainState extends State<WalletMain>
     final portfolioGrowthBloc = context.read<PortfolioGrowthBloc>();
     final profitLossBloc = context.read<ProfitLossBloc>();
     final assetOverviewBloc = context.read<AssetOverviewBloc>();
-    final coinsRepository = RepositoryProvider.of<CoinsRepo>(context);
-    final walletCoins = await coinsRepository.getWalletCoins();
+    final sdk = RepositoryProvider.of<KomodoDefiSdk>(context);
+
+    // Use the historical (previously activated) wallet coins here, as the
+    // [CoinsBloc] state might not be updated yet if the user signs in on this
+    // page. Having this function refresh on [CoinsBloc] state changes is not
+    // ideal, as it would spam API requests each time a coin is activated, or
+    // balance updated.
+    // TODO: update to event-based approach based on soon-to-be-implemented
+    // balance events from the SDK
+    final walletCoins = await sdk.getWalletCoins();
 
     portfolioGrowthBloc.add(
       PortfolioGrowthLoadRequested(
         coins: walletCoins,
         fiatCoinId: 'USDT',
-        updateFrequency: const Duration(minutes: 1),
         selectedPeriod: portfolioGrowthBloc.state.selectedPeriod,
         walletId: walletId,
       ),
@@ -292,26 +272,30 @@ class _WalletMainState extends State<WalletMain>
 }
 
 class _SliverSearchBarDelegate extends SliverPersistentHeaderDelegate {
-  final bool withBalance;
-  final Function(String) onSearchChange;
-  final Function(bool) onWithBalanceChange;
-  final AuthorizeMode mode;
-
   _SliverSearchBarDelegate({
     required this.withBalance,
     required this.onSearchChange,
     required this.onWithBalanceChange,
     required this.mode,
   });
+  final bool withBalance;
+  final Function(String) onSearchChange;
+  final Function(bool) onWithBalanceChange;
+  final AuthorizeMode mode;
 
   @override
-  double get minExtent => 120;
+  final double minExtent = 110;
   @override
-  double get maxExtent => 120;
+  final double maxExtent = 114;
 
   @override
   Widget build(
-      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    // return SizedBox.expand();
+
     return WalletManageSection(
       withBalance: withBalance,
       onSearchChange: onSearchChange,

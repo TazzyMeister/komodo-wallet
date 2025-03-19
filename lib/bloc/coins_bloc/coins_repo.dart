@@ -1,13 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:komodo_defi_rpc_methods/komodo_defi_rpc_methods.dart'
     as kdf_rpc;
 import 'package:komodo_defi_sdk/komodo_defi_sdk.dart';
+import 'package:komodo_defi_types/komodo_defi_type_utils.dart';
 import 'package:komodo_defi_types/komodo_defi_types.dart';
+import 'package:komodo_ui_kit/komodo_ui_kit.dart';
+import 'package:logging/logging.dart';
 import 'package:web_dex/bloc/coins_bloc/asset_coin_extension.dart';
 import 'package:web_dex/blocs/trezor_coins_bloc.dart';
 import 'package:web_dex/generated/codegen_loader.g.dart';
@@ -15,7 +18,6 @@ import 'package:web_dex/mm2/mm2.dart';
 import 'package:web_dex/mm2/mm2_api/rpc/base.dart';
 import 'package:web_dex/mm2/mm2_api/rpc/bloc_response.dart';
 import 'package:web_dex/mm2/mm2_api/rpc/disable_coin/disable_coin_req.dart';
-import 'package:web_dex/mm2/mm2_api/rpc/get_enabled_coins_request.dart';
 import 'package:web_dex/mm2/mm2_api/rpc/withdraw/withdraw_errors.dart';
 import 'package:web_dex/mm2/mm2_api/rpc/withdraw/withdraw_request.dart';
 import 'package:web_dex/model/cex_price.dart';
@@ -24,7 +26,6 @@ import 'package:web_dex/model/text_error.dart';
 import 'package:web_dex/model/wallet.dart';
 import 'package:web_dex/model/withdraw_details/withdraw_details.dart';
 import 'package:web_dex/shared/constants.dart';
-import 'package:web_dex/shared/utils/utils.dart';
 
 class CoinsRepo {
   CoinsRepo({
@@ -45,6 +46,8 @@ class CoinsRepo {
   // TODO: refactor to use repository - pin/password input events need to be
   // handled, which are currently done through the trezor "bloc"
   final TrezorCoinsBloc trezor;
+
+  final _log = Logger('CoinsRepo');
 
   /// { acc: { abbr: address }}, used in Fiat Page
   final Map<String, Map<String, String>> _addressCache = {};
@@ -68,17 +71,19 @@ class CoinsRepo {
   }
 
   void flushCache() {
+    // Intentionally avoid flushing the prices cache - prices are independent
+    // of the user's session and should be updated on a regular basis.
     _addressCache.clear();
     _balancesCache.clear();
   }
 
   List<Coin> getKnownCoins() {
-    final assets = _kdfSdk.assets.available;
+    final Map<AssetId, Asset> assets = _kdfSdk.assets.available;
     return assets.values.map(_assetToCoinWithoutAddress).toList();
   }
 
   Map<String, Coin> getKnownCoinsMap() {
-    final assets = _kdfSdk.assets.available;
+    final Map<AssetId, Asset> assets = _kdfSdk.assets.available;
     return Map.fromEntries(
       assets.values.map(
         (asset) => MapEntry(asset.id.id, _assetToCoinWithoutAddress(asset)),
@@ -86,10 +91,25 @@ class CoinsRepo {
     );
   }
 
+  Coin? getCoinFromId(AssetId id) {
+    final asset = _kdfSdk.assets.available[id];
+    if (asset == null) return null;
+    return _assetToCoinWithoutAddress(asset);
+  }
+
+  @Deprecated('Use KomodoDefiSdk assets or getCoinFromId instead.')
   Coin? getCoin(String coinId) {
+    if (coinId.isEmpty) return null;
+
     try {
-      final asset = _kdfSdk.assets.assetsFromTicker(coinId).single;
-      return _assetToCoinWithoutAddress(asset);
+      final assets = _kdfSdk.assets.assetsFromTicker(coinId);
+      if (assets.isEmpty || assets.length > 1) {
+        _log.warning(
+          'Coin "$coinId" not found. ${assets.length} results returned',
+        );
+        return null;
+      }
+      return _assetToCoinWithoutAddress(assets.single);
     } catch (_) {
       return null;
     }
@@ -101,20 +121,36 @@ class CoinsRepo {
       return [];
     }
 
-    final activatedCoins = currentUser.wallet.config.activatedCoins;
-    final knownCoins = getKnownCoinsMap();
+    final activatedCoins = await _kdfSdk.assets.getActivatedAssets();
     return activatedCoins
-        .map((String coinId) => knownCoins[coinId])
-        .where((Coin? coin) => coin != null)
-        .cast<Coin>()
+        .map((Asset asset) => _assetToCoinWithoutAddress(asset))
         .toList();
   }
 
   Future<Coin?> getEnabledCoin(String coinId) async {
-    final enabledAssets = await getEnabledCoinsMap();
-    final coin = enabledAssets[coinId];
-    if (coin == null) return null;
-    return coin;
+    final currentUser = await _kdfSdk.auth.currentUser;
+    if (currentUser == null) {
+      return null;
+    }
+
+    final enabledAssets = await _kdfSdk.assets.getEnabledCoins();
+    final enabledAsset = enabledAssets.firstWhereOrNull(
+      (asset) => asset == coinId,
+    );
+    if (enabledAsset == null) {
+      return null;
+    }
+
+    final coin = getCoin(enabledAsset);
+    if (coin == null) {
+      return null;
+    }
+    final coinAddress = await getFirstPubkey(coin.id.id);
+    return coin.copyWith(
+      address: coinAddress,
+      state: CoinState.active,
+      enabledType: currentUser.wallet.config.type,
+    );
   }
 
   Future<List<Coin>> getEnabledCoins() async {
@@ -138,7 +174,7 @@ class CoinsRepo {
     final coinsMap = Map.fromEntries(entries);
     for (final coinId in coinsMap.keys) {
       final coin = coinsMap[coinId]!;
-      final coinAddress = await _getCoinAddress(coin.abbr, coinsMap);
+      final coinAddress = await getFirstPubkey(coin.id.id);
       coinsMap[coinId] = coin.copyWith(
         address: coinAddress,
         state: CoinState.active,
@@ -150,15 +186,20 @@ class CoinsRepo {
 
   Coin _assetToCoinWithoutAddress(Asset asset) {
     final coin = asset.toCoin();
-    final balance = _balancesCache[coin.abbr]?.balance;
-    final sendableBalance = _balancesCache[coin.abbr]?.sendableBalance;
-    final price = _pricesCache[coin.abbr];
+    final balance = _balancesCache[coin.id.id]?.balance;
+    final sendableBalance = _balancesCache[coin.id.id]?.sendableBalance;
+    final price = _pricesCache[coin.id.id];
 
     Coin? parentCoin;
     if (asset.id.isChildAsset) {
-      final parentCoinId = asset.id.parentId!.id;
-      final parentAsset = _kdfSdk.assets.assetsFromTicker(parentCoinId).single;
-      parentCoin = _assetToCoinWithoutAddress(parentAsset);
+      final parentCoinId = asset.id.parentId!;
+      final parentAsset = _kdfSdk.assets.available[parentCoinId];
+      if (parentAsset == null) {
+        _log.warning('Parent coin $parentCoinId not found.');
+        parentCoin = null;
+      } else {
+        parentCoin = _assetToCoinWithoutAddress(parentAsset);
+      }
     }
 
     return coin.copyWith(
@@ -169,74 +210,111 @@ class CoinsRepo {
     );
   }
 
-  Future<kdf_rpc.MyBalanceResponse> tryGetBalanceInfo(String abbr) async {
+  /// Attempts to get the balance of a coin. If the coin is not found, it will
+  /// return a zero balance.
+  Future<kdf_rpc.BalanceInfo> tryGetBalanceInfo(AssetId coinId) async {
     try {
-      return await _kdfSdk.client.rpc.wallet.myBalance(coin: abbr);
+      final asset = _kdfSdk.assets.available[coinId];
+      if (asset == null) {
+        throw ArgumentError.value(coinId, 'coinId', 'Coin $coinId not found');
+      }
+
+      final pubkeys = await _kdfSdk.pubkeys.getPubkeys(asset);
+      return pubkeys.balance;
     } catch (e, s) {
-      log(
-        'Failed to get coin $abbr balance: $e',
-        isError: true,
-        path: 'coins_repo => tryGetBalanceInfo',
-        trace: s,
-      ).ignore();
-      return kdf_rpc.MyBalanceResponse(
-        address: '',
-        balance: kdf_rpc.BalanceInfo.zero(),
-        coin: abbr,
-        mmrpc: '2',
-      );
+      _log.shout('Failed to get coin $coinId balance', e, s);
+      return kdf_rpc.BalanceInfo.zero();
     }
   }
 
-  Future<void> activateCoinsSync(List<Coin> coins) async {
-    if (!await _kdfSdk.auth.isSignedIn()) return;
-    final enabledAssets = await getEnabledCoinsMap();
+  Future<void> activateAssetsSync(List<Asset> assets) async {
+    final isSignedIn = await _kdfSdk.auth.isSignedIn();
+    if (!isSignedIn) {
+      final coinIdList = assets.map((e) => e.id.id).join(', ');
+      _log.warning(
+        'No wallet signed in. Skipping activation of [$coinIdList]',
+      );
+      return;
+    }
 
-    for (final coin in coins) {
+    for (final asset in assets) {
+      final coin = asset.toCoin();
       try {
-        if (enabledAssets.containsKey(coin.abbr)) {
-          continue;
-        }
-
-        final asset = _kdfSdk.assets.findAssetsByTicker(coin.abbr).single;
         await _broadcastAsset(coin.copyWith(state: CoinState.activating));
 
-        if (coin.parentCoin != null) {
-          await _activateParentAsset(coin);
-        }
         // ignore: deprecated_member_use
-        await _kdfSdk.assets.activateAsset(asset).last;
+        final progress = await _kdfSdk.assets.activateAsset(assets.single).last;
+        if (!progress.isSuccess) {
+          throw StateError('Failed to activate coin ${asset.id.id}');
+        }
 
         await _broadcastAsset(coin.copyWith(state: CoinState.active));
       } catch (e, s) {
-        log(
-          'Error activating coin: ${coin.abbr} \n$e',
-          isError: true,
-          trace: s,
-        ).ignore();
-        await _broadcastAsset(coin.copyWith(state: CoinState.suspended));
+        _log.shout('Error activating asset: ${asset.id.id}', e, s);
+        await _broadcastAsset(
+          asset.toCoin().copyWith(state: CoinState.suspended),
+        );
+      } finally {
+        // Register outside of the try-catch to ensure icon is available even
+        // in a suspended or failing activation status.
+        if (coin.logoImageUrl?.isNotEmpty == true) {
+          CoinIcon.registerCustomIcon(
+            coin.id.id,
+            NetworkImage(coin.logoImageUrl!),
+          );
+        }
       }
     }
   }
 
-  Future<void> _activateParentAsset(Coin coin) async {
-    final parentAsset =
-        _kdfSdk.assets.findAssetsByTicker(coin.parentCoin!.abbr).single;
-    await _broadcastAsset(
-      coin.parentCoin!.copyWith(state: CoinState.activating),
-    );
-    // ignore: deprecated_member_use
-    await _kdfSdk.assets.activateAsset(parentAsset).last;
-    await _broadcastAsset(
-      coin.parentCoin!.copyWith(state: CoinState.active),
-    );
+  Future<void> activateCoinsSync(List<Coin> coins) async {
+    final isSignedIn = await _kdfSdk.auth.isSignedIn();
+    if (!isSignedIn) {
+      final coinIdList = coins.map((e) => e.id.id).join(', ');
+      _log.warning(
+        'No wallet signed in. Skipping activation of [$coinIdList]',
+      );
+      return;
+    }
+
+    for (final coin in coins) {
+      try {
+        final asset = _kdfSdk.assets.available[coin.id];
+        if (asset == null) {
+          _log.warning('Coin ${coin.id} not found. Skipping activation.');
+          continue;
+        }
+
+        await _broadcastAsset(coin.copyWith(state: CoinState.activating));
+
+        // ignore: deprecated_member_use
+        final progress = await _kdfSdk.assets.activateAsset(asset).last;
+        if (!progress.isSuccess) {
+          throw StateError('Failed to activate coin ${coin.id.id}');
+        }
+
+        await _broadcastAsset(coin.copyWith(state: CoinState.active));
+      } catch (e, s) {
+        _log.shout('Error activating coin: ${coin.id.id} \n$e', e, s);
+        await _broadcastAsset(coin.copyWith(state: CoinState.suspended));
+      } finally {
+        // Register outside of the try-catch to ensure icon is available even
+        // in a suspended or failing activation status.
+        if (coin.logoImageUrl?.isNotEmpty == true) {
+          CoinIcon.registerCustomIcon(
+            coin.id.id,
+            NetworkImage(coin.logoImageUrl!),
+          );
+        }
+      }
+    }
   }
 
   Future<void> deactivateCoinsSync(List<Coin> coins) async {
     if (!await _kdfSdk.auth.isSignedIn()) return;
 
     for (final coin in coins) {
-      await _disableCoin(coin.abbr);
+      await _disableCoin(coin.id.id);
       await _broadcastAsset(coin.copyWith(state: CoinState.inactive));
     }
   }
@@ -245,83 +323,20 @@ class CoinsRepo {
     try {
       await _mm2.call(DisableCoinReq(coin: coinId));
     } catch (e, s) {
-      log(
-        'Error disabling $coinId: $e',
-        path: 'api=> disableCoin => _call',
-        trace: s,
-        isError: true,
-      ).ignore();
+      _log.shout('Error disabling $coinId', e, s);
       return;
     }
   }
 
-  Future<String?> getCoinAddress(String coinId) async {
-    final enabledCoins = await getEnabledCoinsMap();
-    return _getCoinAddress(coinId, enabledCoins);
-  }
-
-  Future<String?> _getCoinAddress(
-    String coinId,
-    Map<String, Coin> walletCoins,
-  ) async {
-    final isLoggedIn = await _kdfSdk.auth.isSignedIn();
-    final currentWallet = (await _kdfSdk.auth.currentUser)?.wallet;
-    final loggedIn = isLoggedIn && currentWallet != null;
-    if (!loggedIn) {
+  @Deprecated('Use SDK pubkeys.getPubkeys instead and let the user '
+      'select from the available options.')
+  Future<String?> getFirstPubkey(String coinId) async {
+    final asset = _kdfSdk.assets.findAssetsByTicker(coinId).single;
+    final pubkeys = await _kdfSdk.pubkeys.getPubkeys(asset);
+    if (pubkeys.keys.isEmpty) {
       return null;
     }
-
-    final String accountKey = currentWallet.id;
-    if (_addressCache.containsKey(accountKey) &&
-        _addressCache[accountKey]!.containsKey(coinId)) {
-      return _addressCache[accountKey]![coinId];
-    } else {
-      try {
-        if (walletCoins[coinId] == null) {
-          await activateCoinsSync([getCoin(coinId)!]);
-        }
-
-        // This function is also called within `getEnabledCoins`, so cannot use
-        // that function unless you enjoy recursive stackoverflow :)
-        final legacyEnabledCoins = await _getEnabledCoins(walletCoins.values);
-        final Coin? coin = legacyEnabledCoins
-            ?.firstWhereOrNull((enabledCoin) => enabledCoin.abbr == coinId);
-
-        if (coin == null || coin.address == null) {
-          if (!_addressCache.containsKey(accountKey)) {
-            _addressCache[accountKey] = {};
-          }
-
-          // Cache this wallet's addresses
-          for (final walletCoin in walletCoins.values) {
-            if (walletCoin.address != null &&
-                !_addressCache[accountKey]!.containsKey(walletCoin.abbr)) {
-              // Exit if the address already exists in a different account
-              // Address belongs to another account, this is a bug,
-              // gives outdated data
-              for (final entry in _addressCache.entries) {
-                if (entry.key != accountKey &&
-                    entry.value.containsValue(walletCoin.address)) {
-                  return null;
-                }
-              }
-
-              _addressCache[accountKey]![walletCoin.abbr] = walletCoin.address!;
-            }
-          }
-
-          return _addressCache[accountKey]![coinId];
-        }
-      } catch (e, s) {
-        log(
-          'Failed to get coin address: $e',
-          isError: true,
-          path: 'coins_repo => _getCoinAddress',
-          trace: s,
-        ).ignore();
-      }
-    }
-    return null;
+    return pubkeys.keys.first.address;
   }
 
   double? getUsdPriceByAmount(String amount, String coinAbbr) {
@@ -360,12 +375,7 @@ class CoinsRepo {
       res = await http.get(pricesUrlV3);
       body = res.body;
     } catch (e, s) {
-      log(
-        'Error updating price from main: $e',
-        path: 'cex_services => _updateFromMain => http.get',
-        trace: s,
-        isError: true,
-      ).ignore();
+      _log.shout('Error updating price from main: $e', e, s);
       return null;
     }
 
@@ -373,12 +383,7 @@ class CoinsRepo {
     try {
       json = jsonDecode(body) as Map<String, dynamic>;
     } catch (e, s) {
-      log(
-        'Error parsing of update price from main response: $e',
-        path: 'cex_services => _updateFromMain => jsonDecode',
-        trace: s,
-        isError: true,
-      ).ignore();
+      _log.shout('Error parsing of update price from main response', e, s);
     }
 
     if (json == null) return null;
@@ -420,12 +425,7 @@ class CoinsRepo {
       res = await http.get(fallbackUri);
       body = res.body;
     } catch (e, s) {
-      log(
-        'Error updating price from fallback: $e',
-        path: 'cex_services => _updateFromFallback => http.get',
-        trace: s,
-        isError: true,
-      ).ignore();
+      _log.shout('Error updating price from fallback', e, s);
       return null;
     }
 
@@ -433,12 +433,7 @@ class CoinsRepo {
     try {
       json = jsonDecode(body) as Map<String, dynamic>?;
     } catch (e, s) {
-      log(
-        'Error parsing of update price from fallback response: $e',
-        path: 'cex_services => _updateFromFallback => jsonDecode',
-        trace: s,
-        isError: true,
-      ).ignore();
+      _log.shout('Error parsing of update price from fallback response', e, s);
     }
 
     if (json == null) return null;
@@ -455,19 +450,14 @@ class CoinsRepo {
           getKnownCoins().where((coin) => coin.coingeckoId == coingeckoId);
 
       for (final Coin coin in samePriceCoins) {
-        prices[coin.abbr] = CexPrice(
-          ticker: coin.abbr,
+        prices[coin.id.id] = CexPrice(
+          ticker: coin.id.id,
           price: double.parse(pricesData['usd'].toString()),
         );
       }
     }
 
     return prices;
-  }
-
-  Future<Balance?> getBalanceInfo(String abbr) async {
-    final pubkeys = await getSdkAsset(_kdfSdk, abbr).getPubkeys();
-    return pubkeys.balance;
   }
 
   Future<Map<String, Coin>> updateTrezorBalances(
@@ -484,19 +474,17 @@ class CoinsRepo {
     return walletCoinsCopy;
   }
 
-  Stream<Coin> updateIguanaBalances(
-    Map<String, Coin> walletCoins,
-  ) async* {
+  Stream<Coin> updateIguanaBalances(Map<String, Coin> walletCoins) async* {
     final walletCoinsCopy = Map<String, Coin>.from(walletCoins);
     final coins =
         walletCoinsCopy.values.where((coin) => coin.isActive).toList();
 
     final newBalances =
-        await Future.wait(coins.map((coin) => tryGetBalanceInfo(coin.abbr)));
+        await Future.wait(coins.map((coin) => tryGetBalanceInfo(coin.id)));
 
     for (int i = 0; i < coins.length; i++) {
-      final newBalance = newBalances[i].balance.total.toDouble();
-      final newSendableBalance = newBalances[i].balance.spendable.toDouble();
+      final newBalance = newBalances[i].total.toDouble();
+      final newSendableBalance = newBalances[i].spendable.toDouble();
 
       final balanceChanged = newBalance != coins[i].balance;
       final sendableBalanceChanged =
@@ -506,7 +494,7 @@ class CoinsRepo {
           balance: newBalance,
           sendableBalance: newSendableBalance,
         );
-        _balancesCache[coins[i].abbr] =
+        _balancesCache[coins[i].id.id] =
             (balance: newBalance, sendableBalance: newSendableBalance);
       }
     }
@@ -519,23 +507,18 @@ class CoinsRepo {
     try {
       response = await _mm2.call(request) as Map<String, dynamic>?;
     } catch (e, s) {
-      log(
-        'Error withdrawing ${request.params.coin}: $e',
-        path: 'api => withdraw',
-        trace: s,
-        isError: true,
-      ).ignore();
+      _log.shout('Error withdrawing ${request.params.coin}', e, s);
     }
 
     if (response == null) {
-      log('Withdraw error: response is null', isError: true).ignore();
+      _log.shout('Withdraw error: response is null');
       return BlocResponse(
         error: TextError(error: LocaleKeys.somethingWrong.tr()),
       );
     }
 
     if (response['error'] != null) {
-      log('Withdraw error: ${response['error']}', isError: true).ignore();
+      _log.shout('Withdraw error: ${response['error']}');
       return BlocResponse(
         error: withdrawErrorFactory.getError(response, request.params.coin),
       );
@@ -548,52 +531,5 @@ class CoinsRepo {
     return BlocResponse(
       result: withdrawDetails,
     );
-  }
-
-  /// This is needed to access the legacy `coin.address` field. The alternative
-  /// method is to use the [tryGetBalanceInfo] method, which also returns an
-  /// address field (although idk if it's equivalent at the time of writing)
-  Future<List<Coin>?> _getEnabledCoins(Iterable<Coin> knownCoins) async {
-    JsonMap response;
-    try {
-      response = await _mm2.call(GetEnabledCoinsReq());
-    } catch (e) {
-      log(
-        'Error getting enabled coins: $e',
-        path: 'api => getEnabledCoins => _call',
-        isError: true,
-      ).ignore();
-      return null;
-    }
-
-    dynamic resultJson;
-    try {
-      resultJson = response['result'];
-    } catch (e, s) {
-      log(
-        'Error parsing of enabled coins response: $e',
-        path: 'api => getEnabledCoins => jsonDecode',
-        trace: s,
-        isError: true,
-      ).ignore();
-      return null;
-    }
-
-    final List<Coin> list = [];
-    if (resultJson is List) {
-      for (final dynamic item in resultJson) {
-        final enabledCoinItem = item as Map<String, dynamic>? ?? {};
-        final Coin? coin = knownCoins.firstWhereOrNull(
-          (Coin known) => known.abbr == enabledCoinItem['ticker'],
-        );
-
-        if (coin != null) {
-          coin.address = enabledCoinItem['address'] as String?;
-          list.add(coin);
-        }
-      }
-    }
-
-    return list;
   }
 }

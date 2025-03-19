@@ -1,4 +1,5 @@
 import 'package:komodo_defi_sdk/komodo_defi_sdk.dart';
+import 'package:komodo_defi_types/komodo_defi_type_utils.dart';
 import 'package:komodo_defi_types/komodo_defi_types.dart';
 import 'package:uuid/uuid.dart';
 import 'package:web_dex/app_config/app_config.dart';
@@ -27,7 +28,7 @@ class Wallet {
   /// [hasBackup] - Whether the wallet has been backed up. Defaults to false.
   factory Wallet.fromName({
     required String name,
-    WalletType walletType = WalletType.iguana,
+    WalletType walletType = WalletType.hdwallet,
     List<String>? activatedCoins,
     bool hasBackup = false,
   }) {
@@ -59,7 +60,8 @@ class Wallet {
   String name;
   WalletConfig config;
 
-  bool get isHW => config.type != WalletType.iguana;
+  bool get isHW =>
+      config.type != WalletType.iguana && config.type != WalletType.hdwallet;
   bool get isLegacyWallet => config.isLegacyWallet;
   Future<String> getLegacySeed(String password) async =>
       await EncryptionTool().decryptData(password, config.seedPhrase) ?? '';
@@ -92,7 +94,8 @@ class WalletConfig {
   factory WalletConfig.fromJson(Map<String, dynamic> json) {
     return WalletConfig(
       type: WalletType.fromJson(
-          json['type'] as String? ?? WalletType.iguana.name),
+        json['type'] as String? ?? WalletType.iguana.name,
+      ),
       seedPhrase: json['seed_phrase'] as String? ?? '',
       pubKey: json['pub_key'] as String?,
       activatedCoins:
@@ -132,7 +135,7 @@ class WalletConfig {
 
 enum WalletType {
   iguana,
-  // TODO! add HD wallet type
+  hdwallet,
   trezor,
   metamask,
   keplr;
@@ -145,6 +148,8 @@ enum WalletType {
         return WalletType.metamask;
       case 'keplr':
         return WalletType.keplr;
+      case 'hdwallet':
+        return WalletType.hdwallet;
       default:
         return WalletType.iguana;
     }
@@ -161,69 +166,15 @@ extension KdfUserWalletExtension on KdfUser {
       config: WalletConfig(
         seedPhrase: '',
         pubKey: walletId.pubkeyHash,
-        activatedCoins: _parseActivatedCoins(walletType),
+        activatedCoins: metadata.valueOrNull<List<String>>('activated_coins') ?? [],
         hasBackup: metadata['has_backup'] as bool? ?? false,
         type: walletType,
       ),
     );
-  }
-
-  List<String> _parseActivatedCoins(WalletType walletType) {
-    final activatedCoins =
-        metadata.valueOrNull<List<String>>('activated_coins');
-    if (activatedCoins == null || activatedCoins.isEmpty) {
-      if (walletType == WalletType.trezor) {
-        return enabledByDefaultTrezorCoins;
-      }
-
-      return enabledByDefaultCoins;
-    }
-
-    return activatedCoins;
   }
 }
 
 extension KdfSdkWalletExtension on KomodoDefiSdk {
   Future<Iterable<Wallet>> get wallets async =>
       (await auth.getUsers()).map((user) => user.wallet);
-}
-
-extension KdfAuthExtension on KomodoDefiSdk {
-  Future<bool> walletExists(String walletId) async {
-    final users = await auth.getUsers();
-    return users.any((user) => user.walletId.name == walletId);
-  }
-
-  Future<Wallet?> currentWallet() async {
-    final user = await auth.currentUser;
-    return user?.wallet;
-  }
-
-  Future<void> addActivatedCoins(Iterable<String> coins) async {
-    final existingCoins = (await auth.currentUser)
-            ?.metadata
-            .valueOrNull<List<String>>('activated_coins') ??
-        [];
-
-    final mergedCoins = <dynamic>{...existingCoins, ...coins}.toList();
-    await auth.setOrRemoveActiveUserKeyValue('activated_coins', mergedCoins);
-  }
-
-  Future<void> removeActivatedCoins(List<String> coins) async {
-    final existingCoins = (await auth.currentUser)
-            ?.metadata
-            .valueOrNull<List<String>>('activated_coins') ??
-        [];
-
-    existingCoins.removeWhere((coin) => coins.contains(coin));
-    await auth.setOrRemoveActiveUserKeyValue('activated_coins', existingCoins);
-  }
-
-  Future<void> confirmSeedBackup({bool hasBackup = true}) async {
-    await auth.setOrRemoveActiveUserKeyValue('has_backup', true);
-  }
-
-  Future<void> setWalletType(WalletType type) async {
-    await auth.setOrRemoveActiveUserKeyValue('type', type.name);
-  }
 }

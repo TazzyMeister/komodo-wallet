@@ -11,6 +11,10 @@ class AuthModeChanged extends AuthBlocEvent {
   final KdfUser? currentUser;
 }
 
+class AuthStateClearRequested extends AuthBlocEvent {
+  const AuthStateClearRequested();
+}
+
 class AuthSignOutRequested extends AuthBlocEvent {
   const AuthSignOutRequested();
 }
@@ -39,4 +43,13 @@ class AuthRestoreRequested extends AuthBlocEvent {
   final Wallet wallet;
   final String password;
   final String seed;
+}
+
+class AuthSeedBackupConfirmed extends AuthBlocEvent {
+  const AuthSeedBackupConfirmed();
+}
+
+class AuthWalletDownloadRequested extends AuthBlocEvent {
+  const AuthWalletDownloadRequested({required this.password});
+  final String password;
 }

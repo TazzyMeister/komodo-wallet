@@ -38,7 +38,6 @@ class IguanaWalletsManager extends StatefulWidget {
 class _IguanaWalletsManagerState extends State<IguanaWalletsManager> {
   bool _isLoading = false;
   WalletsManagerAction _action = WalletsManagerAction.none;
-  String? _errorText;
   Wallet? _selectedWallet;
   WalletsManagerExistWalletAction _existWalletAction =
       WalletsManagerExistWalletAction.none;
@@ -117,7 +116,6 @@ class _IguanaWalletsManagerState extends State<IguanaWalletsManager> {
             wallet: selectedWallet,
             onLogin: _logInToWallet,
             onCancel: _cancel,
-            errorText: _errorText,
           );
       }
     }
@@ -126,7 +124,6 @@ class _IguanaWalletsManagerState extends State<IguanaWalletsManager> {
         return WalletImportWrapper(
           key: const Key('wallet-import'),
           onImport: _importWallet,
-          onCreate: _createWallet,
           onCancel: _cancel,
         );
       case WalletsManagerAction.create:
@@ -180,29 +177,27 @@ class _IguanaWalletsManagerState extends State<IguanaWalletsManager> {
 
   void _cancel() {
     setState(() {
-      _errorText = null;
       _selectedWallet = null;
       _action = WalletsManagerAction.none;
       _existWalletAction = WalletsManagerExistWalletAction.none;
     });
+
+    context.read<AuthBloc>().add(const AuthStateClearRequested());
   }
 
   void _createWallet({
     required String name,
     required String password,
-    required String seed,
+    WalletType? walletType,
   }) {
-    setState(() {
-      _isLoading = true;
-    });
-    final Wallet newWallet = Wallet.fromName(name: name);
+    setState(() => _isLoading = true);
+    final Wallet newWallet = Wallet.fromName(
+      name: name,
+      walletType: walletType ?? WalletType.iguana,
+    );
 
     context.read<AuthBloc>().add(
-          AuthRestoreRequested(
-            wallet: newWallet,
-            password: password,
-            seed: seed,
-          ),
+          AuthRegisterRequested(wallet: newWallet, password: password),
         );
   }
 
@@ -229,7 +224,6 @@ class _IguanaWalletsManagerState extends State<IguanaWalletsManager> {
   Future<void> _logInToWallet(String password, Wallet wallet) async {
     setState(() {
       _isLoading = true;
-      _errorText = null;
     });
 
     final AnalyticsBloc analyticsBloc = context.read<AnalyticsBloc>();

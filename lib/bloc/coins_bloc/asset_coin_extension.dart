@@ -1,30 +1,35 @@
+import 'package:komodo_defi_types/komodo_defi_type_utils.dart';
 import 'package:komodo_defi_types/komodo_defi_types.dart';
 import 'package:web_dex/model/coin.dart';
 import 'package:web_dex/model/coin_type.dart';
 
 extension AssetCoinExtension on Asset {
   Coin toCoin() {
-    // Create protocol data if needed
-    ProtocolData? protocolData;
-    protocolData = ProtocolData(
-      platform: id.parentId?.id ?? '',
-      contractAddress: '',
-    );
-
-    final CoinType? type = _getCoinTypeFromProtocol(protocol);
-    if (type == null) {
-      throw ArgumentError.value(
-          protocol.subClass, 'protocol type', 'Unsupported protocol type');
-    }
-
+    final CoinType type = protocol.subClass.toCoinType();
     // temporary measure to get metadata, like `wallet_only`, that isn't exposed
     // by the SDK (and might be phased out completely later on)
+    // TODO: Remove this once the SDK exposes all the necessary metadata
     final config = protocol.config;
+    final logoImageUrl = config.valueOrNull<String>('logo_image_url');
+    final isCustomToken =
+        (config.valueOrNull<bool>('is_custom_token') ?? false) ||
+            logoImageUrl != null;
+    // TODO: Remove this once the SDK exposes all the necessary metadata
+    // This is the logic from the previous _getCoinMode function
+    final isSegwit = id.id.toLowerCase().contains('-segwit');
+
+    final ProtocolData protocolData = ProtocolData(
+      platform: id.parentId?.id ?? platform ?? '' ,
+      contractAddress: contractAddress ?? '',
+    );
 
     return Coin(
       type: type,
       abbr: id.id,
+      id: id,
       name: id.name,
+      logoImageUrl: logoImageUrl ?? '',
+      isCustomCoin: isCustomToken,
       explorerUrl: config.valueOrNull<String>('explorer_url') ?? '',
       explorerTxUrl: config.valueOrNull<String>('explorer_tx_url') ?? '',
       explorerAddressUrl:
@@ -36,21 +41,27 @@ extension AssetCoinExtension on Asset {
       swapContractAddress: config.valueOrNull<String>('swap_contract_address'),
       fallbackSwapContract:
           config.valueOrNull<String>('fallback_swap_contract'),
-      priority: 0, // Default priority
+      priority: 0,
       state: CoinState.inactive,
       walletOnly: config.valueOrNull<bool>('wallet_only') ?? false,
-      mode: CoinMode.standard,
+      mode: isSegwit ? CoinMode.segwit : CoinMode.standard,
       derivationPath: id.derivationPath,
     );
   }
 
-  CoinType? _getCoinTypeFromProtocol(ProtocolClass protocol) {
-    switch (protocol.subClass) {
+  String? get contractAddress => protocol.config
+      .valueOrNull('protocol', 'protocol_data', 'contract_address');
+  String? get platform => protocol.config
+      .valueOrNull('protocol', 'protocol_data', 'platform');
+}
+
+extension CoinTypeExtension on CoinSubClass {
+  CoinType toCoinType() {
+    switch (this) {
       case CoinSubClass.ftm20:
         return CoinType.ftm20;
       case CoinSubClass.arbitrum:
         return CoinType.arb20;
-      // ignore: deprecated_member_use
       case CoinSubClass.slp:
         return CoinType.slp;
       case CoinSubClass.qrc20:
@@ -87,6 +98,74 @@ extension AssetCoinExtension on Asset {
         return CoinType.krc20;
       default:
         return CoinType.utxo;
+    }
+  }
+
+  bool isEvmProtocol() {
+    switch (this) {
+      case CoinSubClass.avx20:
+      case CoinSubClass.bep20:
+      case CoinSubClass.ftm20:
+      case CoinSubClass.matic:
+      case CoinSubClass.hrc20:
+      case CoinSubClass.arbitrum:
+      case CoinSubClass.moonriver:
+      case CoinSubClass.moonbeam:
+      case CoinSubClass.ethereumClassic:
+      case CoinSubClass.ubiq:
+      case CoinSubClass.krc20:
+      case CoinSubClass.ewt:
+      case CoinSubClass.hecoChain:
+      case CoinSubClass.rskSmartBitcoin:
+      case CoinSubClass.erc20:
+        return true;
+      default:
+        return false;
+    }
+  }
+}
+
+extension CoinSubClassExtension on CoinType {
+  CoinSubClass toCoinSubClass() {
+    switch (this) {
+      case CoinType.ftm20:
+        return CoinSubClass.ftm20;
+      case CoinType.arb20:
+        return CoinSubClass.arbitrum;
+      case CoinType.slp:
+        return CoinSubClass.slp;
+      case CoinType.qrc20:
+        return CoinSubClass.qrc20;
+      case CoinType.avx20:
+        return CoinSubClass.avx20;
+      case CoinType.smartChain:
+        return CoinSubClass.smartChain;
+      case CoinType.mvr20:
+        return CoinSubClass.moonriver;
+      case CoinType.etc:
+        return CoinSubClass.ethereumClassic;
+      case CoinType.hco20:
+        return CoinSubClass.hecoChain;
+      case CoinType.hrc20:
+        return CoinSubClass.hrc20;
+      case CoinType.iris:
+        return CoinSubClass.tendermintToken;
+      case CoinType.cosmos:
+        return CoinSubClass.tendermint;
+      case CoinType.ubiq:
+        return CoinSubClass.ubiq;
+      case CoinType.bep20:
+        return CoinSubClass.bep20;
+      case CoinType.plg20:
+        return CoinSubClass.matic;
+      case CoinType.utxo:
+        return CoinSubClass.utxo;
+      case CoinType.sbch:
+        return CoinSubClass.smartBch;
+      case CoinType.erc20:
+        return CoinSubClass.erc20;
+      case CoinType.krc20:
+        return CoinSubClass.krc20;
     }
   }
 }

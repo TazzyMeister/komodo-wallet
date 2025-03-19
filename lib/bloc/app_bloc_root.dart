@@ -19,6 +19,8 @@ import 'package:web_dex/bloc/auth_bloc/auth_bloc.dart';
 import 'package:web_dex/bloc/bitrefill/bloc/bitrefill_bloc.dart';
 import 'package:web_dex/bloc/bridge_form/bridge_bloc.dart';
 import 'package:web_dex/bloc/bridge_form/bridge_repository.dart';
+import 'package:web_dex/bloc/cex_market_data/mockup/generator.dart';
+import 'package:web_dex/bloc/cex_market_data/mockup/mock_transaction_history_repository.dart';
 import 'package:web_dex/bloc/cex_market_data/mockup/performance_mode.dart';
 import 'package:web_dex/bloc/cex_market_data/portfolio_growth/portfolio_growth_bloc.dart';
 import 'package:web_dex/bloc/cex_market_data/portfolio_growth/portfolio_growth_repository.dart';
@@ -28,6 +30,7 @@ import 'package:web_dex/bloc/cex_market_data/profit_loss/profit_loss_bloc.dart';
 import 'package:web_dex/bloc/cex_market_data/profit_loss/profit_loss_repository.dart';
 import 'package:web_dex/bloc/coins_bloc/coins_bloc.dart';
 import 'package:web_dex/bloc/coins_bloc/coins_repo.dart';
+import 'package:web_dex/bloc/coins_manager/coins_manager_bloc.dart';
 import 'package:web_dex/bloc/dex_repository.dart';
 import 'package:web_dex/bloc/market_maker_bot/market_maker_bot/market_maker_bot_bloc.dart';
 import 'package:web_dex/bloc/market_maker_bot/market_maker_bot/market_maker_bot_repository.dart';
@@ -44,7 +47,7 @@ import 'package:web_dex/bloc/transaction_history/transaction_history_repo.dart';
 import 'package:web_dex/bloc/trezor_bloc/trezor_repo.dart';
 import 'package:web_dex/bloc/trezor_connection_bloc/trezor_connection_bloc.dart';
 import 'package:web_dex/bloc/trezor_init_bloc/trezor_init_bloc.dart';
-import 'package:web_dex/blocs/current_wallet_bloc.dart';
+import 'package:web_dex/blocs/kmd_rewards_bloc.dart';
 import 'package:web_dex/blocs/maker_form_bloc.dart';
 import 'package:web_dex/blocs/orderbook_bloc.dart';
 import 'package:web_dex/blocs/trading_entities_bloc.dart';
@@ -66,16 +69,16 @@ import 'package:web_dex/shared/widgets/coin_icon.dart';
 
 class AppBlocRoot extends StatelessWidget {
   const AppBlocRoot({
-    Key? key,
     required this.storedPrefs,
     required this.komodoDefiSdk,
+    super.key,
   });
 
   final StoredSettings storedPrefs;
   final KomodoDefiSdk komodoDefiSdk;
 
   // TODO: Refactor to clean up the bloat in this main file
-  void _clearCachesIfPerformanceModeChanged(
+  Future<void> _clearCachesIfPerformanceModeChanged(
     PerformanceMode? performanceMode,
     ProfitLossRepository profitLossRepo,
     PortfolioGrowthRepository portfolioGrowthRepo,
@@ -110,21 +113,16 @@ class AppBlocRoot extends StatelessWidget {
       mm2Api,
       myOrdersService,
     );
-    final currentWalletBloc = RepositoryProvider.of<CurrentWalletBloc>(context);
     final dexRepository = DexRepository(mm2Api);
     final trezorRepo = RepositoryProvider.of<TrezorRepo>(context);
     final trezorBloc = RepositoryProvider.of<TrezorCoinsBloc>(context);
 
-    // TODO: SDK Port needed, not sure about this part
-    final transactionsRepo = /*performanceMode != null
+    final transactionsRepo = performanceMode != null
         ? MockTransactionHistoryRepo(
-            api: mm2Api,
-            client: Client(),
             performanceMode: performanceMode,
             demoDataGenerator: DemoDataCache.withDefaults(),
           )
-        : */
-        TransactionHistoryRepo(sdk: komodoDefiSdk);
+        : SdkTransactionHistoryRepository(sdk: komodoDefiSdk);
 
     final profitLossRepo = ProfitLossRepository.withDefaults(
       transactionHistoryRepo: transactionsRepo,
@@ -132,8 +130,7 @@ class AppBlocRoot extends StatelessWidget {
       // Returns real data if performanceMode is null. Consider changing the
       // other repositories to use this pattern.
       demoMode: performanceMode,
-      coinsRepository: coinsRepository,
-      mm2Api: mm2Api,
+      sdk: komodoDefiSdk,
     );
 
     final portfolioGrowthRepo = PortfolioGrowthRepository.withDefaults(
@@ -141,7 +138,7 @@ class AppBlocRoot extends StatelessWidget {
       cexRepository: binanceRepository,
       demoMode: performanceMode,
       coinsRepository: coinsRepository,
-      mm2Api: mm2Api,
+      sdk: komodoDefiSdk,
     );
 
     _clearCachesIfPerformanceModeChanged(
@@ -157,10 +154,11 @@ class AppBlocRoot extends StatelessWidget {
     return MultiRepositoryProvider(
       providers: [
         RepositoryProvider(
-            create: (_) => NftsRepo(
-                  api: mm2Api.nft,
-                  coinsRepo: coinsRepository,
-                )),
+          create: (_) => NftsRepo(
+            api: mm2Api.nft,
+            coinsRepo: coinsRepository,
+          ),
+        ),
         RepositoryProvider(create: (_) => tradingEntitiesBloc),
         RepositoryProvider(create: (_) => dexRepository),
         RepositoryProvider(
@@ -173,22 +171,25 @@ class AppBlocRoot extends StatelessWidget {
         ),
         RepositoryProvider(create: (_) => OrderbookBloc(api: mm2Api)),
         RepositoryProvider(create: (_) => myOrdersService),
+        RepositoryProvider(
+          create: (_) => KmdRewardsBloc(coinsRepository, mm2Api),
+        ),
       ],
       child: MultiBlocProvider(
         providers: [
           BlocProvider(
             create: (context) => CoinsBloc(
               komodoDefiSdk,
-              currentWalletBloc,
               coinsRepository,
               trezorBloc,
               mm2Api,
-            )
-              ..add(CoinsStarted())
+            )..add(CoinsStarted()),
           ),
           BlocProvider<PriceChartBloc>(
-            create: (context) => PriceChartBloc(binanceRepository)
-              ..add(
+            create: (context) => PriceChartBloc(
+              binanceRepository,
+              komodoDefiSdk,
+            )..add(
                 const PriceChartStarted(
                   symbols: ['KMD'],
                   period: Duration(days: 30),
@@ -197,26 +198,26 @@ class AppBlocRoot extends StatelessWidget {
           ),
           BlocProvider<AssetOverviewBloc>(
             create: (context) => AssetOverviewBloc(
-              investmentRepository: InvestmentRepository(
-                profitLossRepository: profitLossRepo,
-              ),
-              profitLossRepository: profitLossRepo,
+              profitLossRepo,
+              InvestmentRepository(profitLossRepository: profitLossRepo),
+              komodoDefiSdk,
             ),
           ),
           BlocProvider<ProfitLossBloc>(
             create: (context) => ProfitLossBloc(
-              profitLossRepository: profitLossRepo,
+              profitLossRepo,
+              komodoDefiSdk,
             ),
           ),
           BlocProvider<PortfolioGrowthBloc>(
             create: (BuildContext ctx) => PortfolioGrowthBloc(
               portfolioGrowthRepository: portfolioGrowthRepo,
-              coinsRepository: coinsRepository,
+              sdk: komodoDefiSdk,
             ),
           ),
           BlocProvider<TransactionHistoryBloc>(
             create: (BuildContext ctx) => TransactionHistoryBloc(
-              repo: transactionsRepo,
+              sdk: komodoDefiSdk,
             ),
           ),
           BlocProvider<SettingsBloc>(
@@ -254,7 +255,6 @@ class AppBlocRoot extends StatelessWidget {
             create: (_) => TrezorConnectionBloc(
               trezorRepo: trezorRepo,
               kdfSdk: komodoDefiSdk,
-              walletRepo: RepositoryProvider.of<CurrentWalletBloc>(context),
             ),
             lazy: false,
           ),
@@ -293,6 +293,12 @@ class AppBlocRoot extends StatelessWidget {
               kdfSdk: komodoDefiSdk,
               trezorRepo: trezorRepo,
               coinsRepository: coinsRepository,
+            ),
+          ),
+          BlocProvider<CoinsManagerBloc>(
+            create: (context) => CoinsManagerBloc(
+              coinsRepo: coinsRepository,
+              sdk: komodoDefiSdk,
             ),
           ),
         ],

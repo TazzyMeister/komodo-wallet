@@ -1,6 +1,6 @@
 import 'package:equatable/equatable.dart';
 import 'package:web_dex/mm2/mm2_api/rpc/base.dart';
-import 'package:komodo_defi_types/types.dart';
+import 'package:komodo_defi_types/komodo_defi_types.dart';
 
 final class TransactionHistoryState extends Equatable {
   const TransactionHistoryState({
@@ -14,7 +14,7 @@ final class TransactionHistoryState extends Equatable {
   final BaseError? error;
 
   @override
-  List<Object?> get props => [transactions, loading];
+  List<Object?> get props => [transactions, loading, error];
 
   const TransactionHistoryState.initial()
       : transactions = const [],

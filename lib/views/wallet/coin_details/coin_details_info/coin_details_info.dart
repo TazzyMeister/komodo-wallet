@@ -3,7 +3,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
-import 'package:komodo_defi_types/types.dart';
+import 'package:komodo_defi_types/komodo_defi_types.dart';
 import 'package:komodo_ui_kit/komodo_ui_kit.dart';
 import 'package:web_dex/app_config/app_config.dart';
 import 'package:web_dex/bloc/auth_bloc/auth_bloc.dart';
@@ -12,7 +12,6 @@ import 'package:web_dex/bloc/cex_market_data/profit_loss/profit_loss_bloc.dart';
 import 'package:web_dex/bloc/coins_bloc/coins_bloc.dart';
 import 'package:web_dex/bloc/taker_form/taker_bloc.dart';
 import 'package:web_dex/bloc/taker_form/taker_event.dart';
-import 'package:web_dex/blocs/current_wallet_bloc.dart';
 import 'package:web_dex/common/screen.dart';
 import 'package:web_dex/generated/codegen_loader.g.dart';
 import 'package:web_dex/model/coin.dart';
@@ -55,33 +54,30 @@ class _CoinDetailsInfoState extends State<CoinDetailsInfo>
   Transaction? _selectedTransaction;
 
   String? get _walletId =>
-      RepositoryProvider.of<CurrentWalletBloc>(context).wallet?.id;
+      RepositoryProvider.of<AuthBloc>(context).state.currentUser?.walletId.name;
 
   @override
   void initState() {
     super.initState();
     const selectedDurationInitial = Duration(hours: 1);
-    final growthBloc = context.read<PortfolioGrowthBloc>();
 
-    growthBloc.add(
-      PortfolioGrowthLoadRequested(
-        coins: [widget.coin],
-        fiatCoinId: 'USDT',
-        selectedPeriod: selectedDurationInitial,
-        walletId: _walletId!,
-      ),
-    );
+    context.read<PortfolioGrowthBloc>().add(
+          PortfolioGrowthLoadRequested(
+            coins: [widget.coin],
+            fiatCoinId: 'USDT',
+            selectedPeriod: selectedDurationInitial,
+            walletId: _walletId!,
+          ),
+        );
 
-    final ProfitLossBloc profitLossBloc = context.read<ProfitLossBloc>();
-
-    profitLossBloc.add(
-      ProfitLossPortfolioChartLoadRequested(
-        coins: [widget.coin],
-        selectedPeriod: const Duration(hours: 1),
-        fiatCoinId: 'USDT',
-        walletId: _walletId!,
-      ),
-    );
+    context.read<ProfitLossBloc>().add(
+          ProfitLossPortfolioChartLoadRequested(
+            coins: [widget.coin],
+            selectedPeriod: const Duration(hours: 1),
+            fiatCoinId: 'USDT',
+            walletId: _walletId!,
+          ),
+        );
   }
 
   @override
@@ -348,8 +344,8 @@ class _CoinDetailsInfoHeader extends StatelessWidget {
               isMobile: true,
               selectWidget: setPageType,
               onClickSwapButton: MainMenuValue.dex.isEnabledInCurrentMode()
-                  ? null
-                  : () => _goToSwap(context, coin),
+                  ? () => _goToSwap(context, coin)
+                  : null,
               coin: coin,
             ),
           ),
@@ -364,10 +360,69 @@ class _CoinDetailsInfoHeader extends StatelessWidget {
   }
 }
 
-class _CoinDetailsMarketMetricsTabBar extends StatelessWidget {
+class _CoinDetailsMarketMetricsTabBar extends StatefulWidget {
   const _CoinDetailsMarketMetricsTabBar({required this.coin});
 
   final Coin coin;
+
+  @override
+  _CoinDetailsMarketMetricsTabBarState createState() =>
+      _CoinDetailsMarketMetricsTabBarState();
+}
+
+class _CoinDetailsMarketMetricsTabBarState
+    extends State<_CoinDetailsMarketMetricsTabBar>
+    with TickerProviderStateMixin {
+  TabController? _tabController;
+  int _currentIndex = 0;
+
+  void _initializeTabController(int numTabs) {
+    _tabController = TabController(
+      length: numTabs,
+      vsync: this,
+      initialIndex: _currentIndex < numTabs ? _currentIndex : 0,
+    );
+
+    _tabController!.addListener(() {
+      if (_tabController!.indexIsChanging) {
+        setState(() {
+          _currentIndex = _tabController!.index;
+        });
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final portfolioGrowthState = context.watch<PortfolioGrowthBloc>().state;
+    final profitLossState = context.watch<ProfitLossBloc>().state;
+    final isPortfolioGrowthSupported =
+        portfolioGrowthState is! PortfolioGrowthChartUnsupported;
+    final isProfitLossSupported =
+        profitLossState is! PortfolioProfitLossChartUnsupported;
+    final areChartsSupported =
+        isPortfolioGrowthSupported || isProfitLossSupported;
+    final numChartsSupported =
+        (isPortfolioGrowthSupported ? 1 : 0) + (isProfitLossSupported ? 1 : 0);
+
+    if (areChartsSupported) {
+      if (_tabController == null ||
+          _tabController!.length != numChartsSupported) {
+        _initializeTabController(numChartsSupported);
+      }
+    } else {
+      _tabController?.dispose();
+      _tabController = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -379,58 +434,49 @@ class _CoinDetailsMarketMetricsTabBar extends StatelessWidget {
         profitLossState is! PortfolioProfitLossChartUnsupported;
     final areChartsSupported =
         isPortfolioGrowthSupported || isProfitLossSupported;
-    final numChartsSupported = 0 +
-        (isPortfolioGrowthSupported ? 1 : 0) +
-        (isProfitLossSupported ? 1 : 0);
+    final numChartsSupported =
+        (isPortfolioGrowthSupported ? 1 : 0) + (isProfitLossSupported ? 1 : 0);
 
     if (!areChartsSupported) {
       return const SizedBox.shrink();
     }
 
-    final TabController tabController = TabController(
-      length: numChartsSupported,
-      vsync: Navigator.of(context),
-    );
+    if (_tabController == null) {
+      _initializeTabController(numChartsSupported);
+    }
 
     return Column(
       children: [
         Card(
           child: TabBar(
-            controller: tabController,
+            controller: _tabController,
             tabs: [
-              // spread operator used to ensure that tabs and views are
-              // in sync
-              ...([
-                if (isPortfolioGrowthSupported)
-                  Tab(text: LocaleKeys.growth.tr()),
-                if (isProfitLossSupported)
-                  Tab(text: LocaleKeys.profitAndLoss.tr()),
-              ]),
+              if (isPortfolioGrowthSupported) Tab(text: LocaleKeys.growth.tr()),
+              if (isProfitLossSupported)
+                Tab(text: LocaleKeys.profitAndLoss.tr()),
             ],
           ),
         ),
         SizedBox(
           height: 340,
           child: TabBarView(
-            controller: tabController,
+            controller: _tabController,
             children: [
-              ...([
-                if (isPortfolioGrowthSupported)
-                  SizedBox(
-                    width: double.infinity,
-                    height: 340,
-                    child: PortfolioGrowthChart(initialCoins: [coin]),
-                  ),
-                if (isProfitLossSupported)
-                  SizedBox(
-                    width: double.infinity,
-                    height: 340,
-                    child: PortfolioProfitLossChart(initialCoins: [coin]),
-                  ),
-              ]),
+              if (isPortfolioGrowthSupported)
+                SizedBox(
+                  width: double.infinity,
+                  height: 340,
+                  child: PortfolioGrowthChart(initialCoins: [widget.coin]),
+                ),
+              if (isProfitLossSupported)
+                SizedBox(
+                  width: double.infinity,
+                  height: 340,
+                  child: PortfolioProfitLossChart(initialCoins: [widget.coin]),
+                ),
             ],
           ),
-        )
+        ),
       ],
     );
   }
@@ -585,7 +631,9 @@ class _SpecificButton extends StatelessWidget {
     final currentWallet = context.watch<AuthBloc>().state.currentUser?.wallet;
     final walletType = currentWallet?.config.type;
 
-    if (coin.abbr == 'KMD' && walletType == WalletType.iguana) {
+    if (coin.abbr == 'KMD' &&
+        (walletType == WalletType.iguana ||
+            walletType == WalletType.hdwallet)) {
       return _GetRewardsButton(
         coin: coin,
         onTap: () => selectWidget(CoinPageType.claim),

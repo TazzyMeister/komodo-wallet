@@ -1,8 +1,8 @@
 import 'package:app_theme/app_theme.dart';
-import 'package:bip39/bip39.dart' show validateMnemonic;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:komodo_defi_sdk/komodo_defi_sdk.dart';
 import 'package:komodo_ui_kit/komodo_ui_kit.dart';
 import 'package:web_dex/bloc/security_settings/security_settings_bloc.dart';
 import 'package:web_dex/bloc/security_settings/security_settings_event.dart';
@@ -78,8 +78,8 @@ class SeedShow extends StatelessWidget {
 class _PrivateKeysList extends StatelessWidget {
   const _PrivateKeysList({
     required this.privKeys,
-    Key? key,
-  }) : super(key: key);
+    super.key,
+  });
 
   final Map<Coin, String> privKeys;
 
@@ -308,7 +308,10 @@ class _SeedPlace extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isCustom = !validateMnemonic(seedPhrase);
+    final isCustom = !context
+        .read<KomodoDefiSdk>()
+        .mnemonicValidator
+        .validateBip39(seedPhrase);
     if (isCustom) return _SeedField(seedPhrase: seedPhrase);
     return _WordsList(seedPhrase: seedPhrase);
   }
@@ -397,11 +400,11 @@ class _WordsList extends StatelessWidget {
 
 class _SelectableSeedWord extends StatelessWidget {
   const _SelectableSeedWord({
-    Key? key,
+    super.key,
     required this.isSeedShown,
     required this.initialValue,
     required this.index,
-  }) : super(key: key);
+  });
 
   final bool isSeedShown;
   final String initialValue;
@@ -415,20 +418,11 @@ class _SelectableSeedWord extends StatelessWidget {
       color:
           Theme.of(context).textTheme.bodyMedium?.color?.withValues(alpha: 0.4),
     );
-    final TextEditingController seedWordController = TextEditingController()
-      ..text = isSeedShown ? initialValue : '••••••';
+    final text = isSeedShown ? initialValue : '••••••';
 
     return Focus(
       descendantsAreFocusable: true,
       skipTraversal: true,
-      onFocusChange: (value) {
-        if (value) {
-          seedWordController.selection = TextSelection(
-            baseOffset: 0,
-            extentOffset: seedWordController.value.text.length,
-          );
-        }
-      },
       child: FractionallySizedBox(
         widthFactor: isMobile ? 0.5 : 0.25,
         child: Row(
@@ -448,9 +442,9 @@ class _SelectableSeedWord extends StatelessWidget {
                 constraints: const BoxConstraints(maxHeight: 31),
                 child: DryIntrinsicWidth(
                   child: UiTextFormField(
+                    initialValue: text,
                     obscureText: !isSeedShown,
                     readOnly: true,
-                    controller: seedWordController,
                   ),
                 ),
               ),
@@ -470,7 +464,10 @@ class _SeedPhraseConfirmButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bloc = context.read<SecuritySettingsBloc>();
-    final isCustom = !validateMnemonic(seedPhrase);
+    final isCustom = !context
+        .read<KomodoDefiSdk>()
+        .mnemonicValidator
+        .validateBip39(seedPhrase);
     if (isCustom) return const SizedBox.shrink();
 
     void onPressed() => bloc.add(const SeedConfirmEvent());

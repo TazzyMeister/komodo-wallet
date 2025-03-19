@@ -3,7 +3,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:komodo_defi_sdk/komodo_defi_sdk.dart';
-import 'package:komodo_defi_types/types.dart';
+import 'package:komodo_defi_types/komodo_defi_types.dart';
 import 'package:komodo_ui_kit/komodo_ui_kit.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:web_dex/bloc/auth_bloc/auth_bloc.dart';
@@ -19,7 +19,7 @@ import 'package:web_dex/views/wallet/common/address_copy_button.dart';
 import 'package:web_dex/views/wallet/common/address_icon.dart';
 import 'package:web_dex/views/wallet/common/address_text.dart';
 
-class CoinAddresses extends StatelessWidget {
+class CoinAddresses extends StatefulWidget {
   const CoinAddresses({
     super.key,
     required this.coin,
@@ -28,104 +28,128 @@ class CoinAddresses extends StatelessWidget {
   final Coin coin;
 
   @override
-  Widget build(BuildContext context) {
-    final kdfSdk = RepositoryProvider.of<KomodoDefiSdk>(context);
-    return BlocBuilder<AuthBloc, AuthBlocState>(builder: (context, state) {
-      return BlocProvider(
-        create: (context) => CoinAddressesBloc(
-          kdfSdk,
-          coin.abbr,
-        )..add(const LoadAddressesEvent()),
-        child: BlocBuilder<CoinAddressesBloc, CoinAddressesState>(
-          builder: (context, state) {
-            return SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  Card(
-                    margin: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16.0),
-                    ),
-                    color: theme.custom.dexPageTheme.frontPlate,
-                    child: Padding(
-                      padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _Header(
-                            status: state.status,
-                            createAddressStatus: state.createAddressStatus,
-                            hideZeroBalance: state.hideZeroBalance,
-                            cantCreateNewAddressReasons:
-                                state.cantCreateNewAddressReasons,
-                          ),
-                          const SizedBox(height: 12),
-                          ...state.addresses.asMap().entries.map(
-                            (entry) {
-                              final index = entry.key;
-                              final address = entry.value;
-                              if (state.hideZeroBalance &&
-                                  !address.balance.hasBalance) {
-                                return const SizedBox();
-                              }
+  State<CoinAddresses> createState() => _CoinAddressesState();
+}
 
-                              return AddressCard(
-                                address: address,
-                                index: index,
-                                coin: coin,
-                              );
-                            },
-                          ).toList(),
-                          if (state.status == FormStatus.submitting)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 20.0),
-                              child: Center(child: CircularProgressIndicator()),
+class _CoinAddressesState extends State<CoinAddresses> {
+  late final CoinAddressesBloc _addressesBloc;
+
+  @override
+  void initState() {
+    super.initState();
+    final kdfSdk = RepositoryProvider.of<KomodoDefiSdk>(context);
+    _addressesBloc = CoinAddressesBloc(
+      kdfSdk,
+      widget.coin.abbr,
+    )..add(const LoadAddressesEvent());
+  }
+
+  @override
+  void dispose() {
+    _addressesBloc.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<AuthBloc, AuthBlocState>(
+      builder: (context, state) {
+        return BlocProvider.value(
+          value: _addressesBloc,
+          child: BlocBuilder<CoinAddressesBloc, CoinAddressesState>(
+            builder: (context, state) {
+              return SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    Card(
+                      margin: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16.0),
+                      ),
+                      color: theme.custom.dexPageTheme.frontPlate,
+                      child: Padding(
+                        padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _Header(
+                              status: state.status,
+                              createAddressStatus: state.createAddressStatus,
+                              hideZeroBalance: state.hideZeroBalance,
+                              cantCreateNewAddressReasons:
+                                  state.cantCreateNewAddressReasons,
                             ),
-                          if (state.status == FormStatus.failure ||
-                              state.createAddressStatus == FormStatus.failure)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 20.0),
-                              child: Center(
+                            const SizedBox(height: 12),
+                            ...state.addresses.asMap().entries.map(
+                              (entry) {
+                                final index = entry.key;
+                                final address = entry.value;
+                                if (state.hideZeroBalance &&
+                                    !address.balance.hasBalance) {
+                                  return const SizedBox();
+                                }
+
+                                return AddressCard(
+                                  address: address,
+                                  index: index,
+                                  coin: widget.coin,
+                                );
+                              },
+                            ),
+                            if (state.status == FormStatus.submitting)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 20.0),
+                                child:
+                                    Center(child: CircularProgressIndicator()),
+                              ),
+                            if (state.status == FormStatus.failure ||
+                                state.createAddressStatus == FormStatus.failure)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 20.0),
+                                child: Center(
                                   child: Text(
-                                      state.errorMessage ??
-                                          LocaleKeys.somethingWrong.tr(),
-                                      style: TextStyle(
-                                          color: theme.currentGlobal.colorScheme
-                                              .error))),
-                            ),
-                        ],
+                                    state.errorMessage ??
+                                        LocaleKeys.somethingWrong.tr(),
+                                    style: TextStyle(
+                                      color:
+                                          theme.currentGlobal.colorScheme.error,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  if (isMobile)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16.0),
-                      child: CreateButton(
-                        status: state.status,
-                        createAddressStatus: state.createAddressStatus,
-                        cantCreateNewAddressReasons:
-                            state.cantCreateNewAddressReasons,
+                    if (isMobile)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16.0),
+                        child: CreateButton(
+                          status: state.status,
+                          createAddressStatus: state.createAddressStatus,
+                          cantCreateNewAddressReasons:
+                              state.cantCreateNewAddressReasons,
+                        ),
                       ),
-                    ),
-                ],
-              ),
-            );
-          },
-        ),
-      );
-    });
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 }
 
 class _Header extends StatelessWidget {
   const _Header({
-    Key? key,
     required this.status,
     required this.createAddressStatus,
     required this.hideZeroBalance,
     required this.cantCreateNewAddressReasons,
-  }) : super(key: key);
+  });
 
   final FormStatus status;
   final FormStatus createAddressStatus;
@@ -391,11 +415,11 @@ class HideZeroBalanceCheckbox extends StatelessWidget {
 
 class CreateButton extends StatelessWidget {
   const CreateButton({
-    Key? key,
+    super.key,
     required this.status,
     required this.createAddressStatus,
     required this.cantCreateNewAddressReasons,
-  }) : super(key: key);
+  });
 
   final FormStatus status;
   final FormStatus createAddressStatus;
@@ -408,6 +432,8 @@ class CreateButton extends StatelessWidget {
     return Tooltip(
       message: tooltipMessage,
       child: UiPrimaryButton(
+        height: 40,
+        borderRadius: 20,
         backgroundColor: isMobile ? theme.custom.dexPageTheme.emptyPlace : null,
         text: createAddressStatus == FormStatus.submitting
             ? '${LocaleKeys.creating.tr()}...'
@@ -459,10 +485,10 @@ class QrCode extends StatelessWidget {
   final String coinAbbr;
 
   const QrCode({
-    Key? key,
+    super.key,
     required this.address,
     required this.coinAbbr,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -471,7 +497,7 @@ class QrCode extends StatelessWidget {
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: QrImage(
+          child: QrImageView(
             data: address,
             backgroundColor: Theme.of(context).textTheme.bodyMedium!.color!,
             foregroundColor: theme.custom.dexPageTheme.emptyPlace,

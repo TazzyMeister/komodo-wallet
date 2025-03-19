@@ -2,16 +2,16 @@ import 'package:app_theme/app_theme.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:komodo_ui_kit/komodo_ui_kit.dart';
 import 'package:web_dex/bloc/transaction_history/transaction_history_bloc.dart';
 import 'package:web_dex/bloc/transaction_history/transaction_history_state.dart';
 import 'package:web_dex/generated/codegen_loader.g.dart';
-import 'package:komodo_defi_types/types.dart';
+import 'package:komodo_defi_types/komodo_defi_types.dart';
 import 'package:web_dex/model/coin.dart';
 import 'package:web_dex/shared/utils/utils.dart';
 import 'package:web_dex/shared/widgets/launch_native_explorer_button.dart';
 import 'package:web_dex/views/wallet/coin_details/transactions/transaction_details.dart';
 import 'package:web_dex/views/wallet/coin_details/transactions/transaction_list.dart';
-import 'package:komodo_ui_kit/komodo_ui_kit.dart';
 
 class TransactionTable extends StatelessWidget {
   const TransactionTable({
@@ -68,21 +68,19 @@ class TransactionTable extends StatelessWidget {
   Widget _buildTransactionList(BuildContext context) {
     return BlocBuilder<TransactionHistoryBloc, TransactionHistoryState>(
       builder: (BuildContext ctx, TransactionHistoryState state) {
-        if (state.transactions.isEmpty) {
-          if (coin.isActivating || state.loading) {
-            return const SliverToBoxAdapter(
-              child: UiSpinnerList(),
-            );
-          }
+        if (state.transactions.isEmpty && state.loading) {
+          return const SliverToBoxAdapter(
+            child: UiSpinnerList(),
+          );
+        }
 
-          if (state.error != null) {
-            return SliverToBoxAdapter(
-              child: _ErrorMessage(
-                text: state.error!.message,
-                textColor: theme.currentGlobal.colorScheme.error,
-              ),
-            );
-          }
+        if (state.error != null) {
+          return SliverToBoxAdapter(
+            child: _ErrorMessage(
+              text: LocaleKeys.connectionToServersFailing.tr(args: [coin.name]),
+              textColor: theme.currentGlobal.colorScheme.error,
+            ),
+          );
         }
 
         return _TransactionsListWrapper(

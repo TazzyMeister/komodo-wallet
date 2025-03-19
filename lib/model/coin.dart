@@ -1,16 +1,21 @@
 import 'package:collection/collection.dart';
+import 'package:komodo_defi_sdk/komodo_defi_sdk.dart';
+import 'package:komodo_defi_types/komodo_defi_types.dart';
 import 'package:web_dex/app_config/app_config.dart';
+import 'package:web_dex/bloc/coins_bloc/asset_coin_extension.dart';
 import 'package:web_dex/model/cex_price.dart';
 import 'package:web_dex/model/coin_type.dart';
 import 'package:web_dex/model/coin_utils.dart';
 import 'package:web_dex/model/hd_account/hd_account.dart';
 import 'package:web_dex/model/wallet.dart';
 import 'package:web_dex/shared/utils/formatters.dart';
+import 'package:web_dex/shared/utils/utils.dart';
 
 class Coin {
   Coin({
     required this.type,
     required this.abbr,
+    required this.id,
     required this.name,
     required this.explorerUrl,
     required this.explorerTxUrl,
@@ -18,6 +23,7 @@ class Coin {
     required this.protocolType,
     required this.protocolData,
     required this.isTestCoin,
+    required this.logoImageUrl,
     required this.coingeckoId,
     required this.fallbackSwapContract,
     required this.priority,
@@ -29,6 +35,7 @@ class Coin {
     this.usdPrice,
     this.coinpaprikaId,
     this.activeByDefault = false,
+    this.isCustomCoin = false,
     required String? swapContractAddress,
     required bool walletOnly,
     required this.mode,
@@ -39,6 +46,8 @@ class Coin {
 
   final String abbr;
   final String name;
+  final AssetId id;
+  final String? logoImageUrl;
   final String? coingeckoId;
   final String? coinpaprikaId;
   final CoinType type;
@@ -52,12 +61,21 @@ class Coin {
   final int decimals;
   CexPrice? usdPrice;
   final bool isTestCoin;
+  bool isCustomCoin;
+
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset multi-address support instead. The wallet now works with multiple addresses per account.')
   String? address;
+
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset account management instead.')
   List<HdAccount>? accounts;
+
   final double _balance;
   final String? _swapContractAddress;
   String? fallbackSwapContract;
+
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s WalletManager to determine wallet type.')
   WalletType? enabledType;
+
   final bool _walletOnly;
   final int priority;
   Coin? parentCoin;
@@ -73,8 +91,10 @@ class Coin {
   bool get isActivating => state == CoinState.activating;
   bool get isInactive => state == CoinState.inactive;
 
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset.sendableBalance instead. This value is not updated after initial load and may be inaccurate.')
   double sendableBalance = 0;
 
+  @Deprecated('$_urgentDeprecationNotice Use the balance manager from the SDK. This balance value is not updated after initial load and may be inaccurate.')
   double get balance {
     switch (enabledType) {
       case WalletType.trezor:
@@ -84,6 +104,7 @@ class Coin {
     }
   }
 
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset balance tracking instead. This balance value is not updated after initial load and may be inaccurate.')
   double? get _totalHdBalance {
     if (accounts == null) return null;
 
@@ -104,6 +125,7 @@ class Coin {
     return amount * usdPrice!.price;
   }
 
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset price and balance methods instead. This value uses potentially outdated balance and price information.')
   double? get usdBalance {
     if (usdPrice == null) return null;
     if (balance == 0) return 0;
@@ -116,6 +138,7 @@ class Coin {
     return '\$${formatAmt(calculateUsdAmount(amount))}';
   }
 
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset balance methods. This getter uses outdated balance information.')
   String get getFormattedUsdBalance => amountToFormattedUsd(balance);
 
   String get typeName => getCoinTypeName(type);
@@ -130,6 +153,7 @@ class Coin {
   bool get isTxMemoSupported =>
       type == CoinType.iris || type == CoinType.cosmos;
 
+  @Deprecated('TODO: Adapt SDK to cater for this use case and remove this method.')
   String? get defaultAddress {
     switch (enabledType) {
       case WalletType.trezor:
@@ -154,6 +178,7 @@ class Coin {
     return false;
   }
 
+  @Deprecated('TODO: Adapt SDK to cater for this use case and remove this method.')
   String? get _defaultTrezorAddress {
     if (enabledType != WalletType.trezor) return null;
     if (accounts == null) return null;
@@ -163,6 +188,7 @@ class Coin {
     return accounts!.first.addresses.first.address;
   }
 
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset address management instead. This value is not updated after initial load and may be inaccurate.')
   List<HdAddress> nonEmptyHdAddresses() {
     final List<HdAddress>? allAddresses = accounts?.first.addresses;
     if (allAddresses == null) return [];
@@ -172,11 +198,13 @@ class Coin {
     return nonEmpty;
   }
 
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset derivation methods instead. This method does not work for multiple addresses per coin.')
   String? getDerivationPath(String address) {
     final HdAddress? hdAddress = getHdAddress(address);
     return hdAddress?.derivationPath;
   }
 
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset address management instead. This method does not work for multiple addresses per coin.')
   HdAddress? getHdAddress(String? address) {
     if (address == null) return null;
     if (enabledType == WalletType.iguana) return null;
@@ -186,7 +214,8 @@ class Coin {
     if (address.isEmpty) return null;
 
     return addresses.firstWhereOrNull(
-        (HdAddress hdAddress) => hdAddress.address == address);
+      (HdAddress hdAddress) => hdAddress.address == address,
+    );
   }
 
   static bool checkSegwitByAbbr(String abbr) => abbr.contains('-segwit');
@@ -197,6 +226,7 @@ class Coin {
     return 'Coin($abbr);';
   }
 
+  @Deprecated('$_urgentDeprecationNotice Use the SDK\'s Asset state management instead.')
   void reset() {
     enabledType = null;
     accounts = null;
@@ -207,12 +237,15 @@ class Coin {
     return Coin(
       type: type,
       abbr: abbr,
+      id: assetId,
       name: name,
       explorerUrl: explorerUrl,
       explorerTxUrl: explorerTxUrl,
       explorerAddressUrl: explorerAddressUrl,
       protocolType: protocolType,
       isTestCoin: isTestCoin,
+      isCustomCoin: isCustomCoin,
+      logoImageUrl: logoImageUrl,
       coingeckoId: coingeckoId,
       fallbackSwapContract: fallbackSwapContract,
       priority: priority,
@@ -230,14 +263,29 @@ class Coin {
     );
   }
 
+  AssetId get assetId => AssetId(
+        id: abbr,
+        name: name,
+        symbol: AssetSymbol(
+          assetConfigId: abbr,
+          coinGeckoId: coingeckoId,
+          coinPaprikaId: coinpaprikaId,
+        ),
+        chainId: AssetChainId(chainId: 0),
+        derivationPath: derivationPath ?? '',
+        subClass: type.toCoinSubClass(),
+      );
+
   Coin copyWith({
     CoinType? type,
     String? abbr,
+    AssetId? id,
     String? name,
     String? explorerUrl,
     String? explorerTxUrl,
     String? explorerAddressUrl,
     String? protocolType,
+    String? logoImageUrl,
     ProtocolData? protocolData,
     bool? isTestCoin,
     String? coingeckoId,
@@ -258,11 +306,14 @@ class Coin {
     WalletType? enabledType,
     double? balance,
     double? sendableBalance,
+    bool? isCustomCoin,
   }) {
     return Coin(
       type: type ?? this.type,
       abbr: abbr ?? this.abbr,
+      id: id ?? this.id,
       name: name ?? this.name,
+      logoImageUrl: logoImageUrl ?? this.logoImageUrl,
       explorerUrl: explorerUrl ?? this.explorerUrl,
       explorerTxUrl: explorerTxUrl ?? this.explorerTxUrl,
       explorerAddressUrl: explorerAddressUrl ?? this.explorerAddressUrl,
@@ -284,6 +335,7 @@ class Coin {
       walletOnly: walletOnly ?? _walletOnly,
       mode: mode ?? this.mode,
       balance: balance ?? _balance,
+      isCustomCoin: isCustomCoin ?? this.isCustomCoin,
     )
       ..address = address ?? this.address
       ..enabledType = enabledType ?? this.enabledType
@@ -291,127 +343,8 @@ class Coin {
   }
 }
 
-CoinType? getCoinType(String? jsonType, String coinAbbr) {
-  // anchor: protocols support
-  for (CoinType value in CoinType.values) {
-    switch (value) {
-      case CoinType.utxo:
-        if (jsonType == 'UTXO') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.smartChain:
-        if (jsonType == 'Smart Chain') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.erc20:
-        if (jsonType == 'ERC-20') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.bep20:
-        if (jsonType == 'BEP-20') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.qrc20:
-        if (jsonType == 'QRC-20') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.ftm20:
-        if (jsonType == 'FTM-20') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.arb20:
-        if (jsonType == 'Arbitrum') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.etc:
-        if (jsonType == 'Ethereum Classic') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.avx20:
-        if (jsonType == 'AVX-20') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.mvr20:
-        if (jsonType == 'Moonriver') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.hco20:
-        if (jsonType == 'HecoChain') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.plg20:
-        if (jsonType == 'Matic') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.sbch:
-        if (jsonType == 'SmartBCH') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.ubiq:
-        if (jsonType == 'Ubiq') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.hrc20:
-        if (jsonType == 'HRC-20') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.krc20:
-        if (jsonType == 'KRC-20') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.cosmos:
-        if (jsonType == 'TENDERMINT' && coinAbbr != 'IRIS') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.iris:
-        if (jsonType == 'TENDERMINTTOKEN' || coinAbbr == 'IRIS') {
-          return value;
-        } else {
-          continue;
-        }
-      case CoinType.slp:
-        if (jsonType == 'SLP') {
-          return value;
-        } else {
-          continue;
-        }
-    }
-  }
-  return null;
+extension LegacyCoinToSdkAsset on Coin {
+  Asset toSdkAsset(KomodoDefiSdk sdk) => getSdkAsset(sdk, abbr);
 }
 
 class ProtocolData {
@@ -439,8 +372,9 @@ class ProtocolData {
 class CoinNode {
   const CoinNode({required this.url, required this.guiAuth});
   static CoinNode fromJson(Map<String, dynamic> json) => CoinNode(
-      url: json['url'],
-      guiAuth: (json['gui_auth'] ?? json['komodo_proxy']) ?? false);
+        url: json['url'],
+        guiAuth: (json['gui_auth'] ?? json['komodo_proxy']) ?? false,
+      );
   final bool guiAuth;
   final String url;
 
@@ -466,3 +400,5 @@ extension CoinListExtension on List<Coin> {
     return Map.fromEntries(map((coin) => MapEntry(coin.abbr, coin)));
   }
 }
+
+const String _urgentDeprecationNotice ='(URGENT) This must be fixed before the next release.';

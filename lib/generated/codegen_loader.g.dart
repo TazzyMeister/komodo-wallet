@@ -1,11 +1,14 @@
 // DO NOT EDIT. This is code generated via package:easy_localization/generate.dart
 
+// ignore_for_file: constant_identifier_names
+
 abstract class  LocaleKeys {
   static const plsActivateKmd = 'plsActivateKmd';
   static const rewardClaiming = 'rewardClaiming';
   static const noKmdAddress = 'noKmdAddress';
   static const dex = 'dex';
   static const asset = 'asset';
+  static const assets = 'assets';
   static const price = 'price';
   static const volume = 'volume';
   static const history = 'history';
@@ -189,12 +192,13 @@ abstract class  LocaleKeys {
   static const swapFeeDetailsNone = 'swapFeeDetailsNone';
   static const swapFeeDetailsPaidFromReceivedVolume = 'swapFeeDetailsPaidFromReceivedVolume';
   static const logoutPopupTitle = 'logoutPopupTitle';
-  static const logoutPopupDescription = 'logoutPopupDescription';
   static const logoutPopupDescriptionWalletOnly = 'logoutPopupDescriptionWalletOnly';
+  static const logoutPopupDescription = 'logoutPopupDescription';
   static const transactionDetailsTitle = 'transactionDetailsTitle';
   static const customSeedWarningText = 'customSeedWarningText';
   static const customSeedIUnderstand = 'customSeedIUnderstand';
   static const walletCreationBip39SeedError = 'walletCreationBip39SeedError';
+  static const walletCreationHdBip39SeedError = 'walletCreationHdBip39SeedError';
   static const walletPageNoSuchAsset = 'walletPageNoSuchAsset';
   static const swapCoin = 'swapCoin';
   static const fiatBalance = 'fiatBalance';
@@ -398,6 +402,9 @@ abstract class  LocaleKeys {
   static const missingDerivationPath = 'missingDerivationPath';
   static const protocolNotSupported = 'protocolNotSupported';
   static const derivationModeNotSupported = 'derivationModeNotSupported';
+  static const hdWalletModeSwitchTitle = 'hdWalletModeSwitchTitle';
+  static const hdWalletModeSwitchSubtitle = 'hdWalletModeSwitchSubtitle';
+  static const hdWalletModeSwitchTooltip = 'hdWalletModeSwitchTooltip';
   static const noActiveWallet = 'noActiveWallet';
   static const memo = 'memo';
   static const gasPriceGwei = 'gasPriceGwei';
@@ -518,6 +525,7 @@ abstract class  LocaleKeys {
   static const refreshList = 'refreshList';
   static const unableRetrieveNftData = 'unableRetrieveNftData';
   static const tryCheckInternetConnection = 'tryCheckInternetConnection';
+  static const connectionToServersFailing = 'connectionToServersFailing';
   static const resetWalletTitle = 'resetWalletTitle';
   static const resetWalletContent = 'resetWalletContent';
   static const resetCompleteTitle = 'resetCompleteTitle';
@@ -597,6 +605,13 @@ abstract class  LocaleKeys {
   static const mmBotFirstTradePreview = 'mmBotFirstTradePreview';
   static const mmBotFirstTradeEstimate = 'mmBotFirstTradeEstimate';
   static const mmBotFirstOrderVolume = 'mmBotFirstOrderVolume';
+  static const importCustomToken = 'importCustomToken';
+  static const importTokenWarning = 'importTokenWarning';
+  static const importToken = 'importToken';
+  static const selectNetwork = 'selectNetwork';
+  static const tokenContractAddress = 'tokenContractAddress';
+  static const tokenNotFound = 'tokenNotFound';
+  static const decimals = 'decimals';
   static const onlySendToThisAddress = 'onlySendToThisAddress';
   static const scanTheQrCode = 'scanTheQrCode';
   static const swapAddress = 'swapAddress';

@@ -9,7 +9,7 @@ import 'package:web_dex/generated/codegen_loader.g.dart';
 import 'package:web_dex/mm2/mm2_api/mm2_api.dart';
 
 class AppVersionNumber extends StatelessWidget {
-  const AppVersionNumber({Key? key}) : super(key: key);
+  const AppVersionNumber({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -36,13 +36,15 @@ class AppVersionNumber extends StatelessWidget {
 }
 
 class _BundledCoinsCommitConfig extends StatelessWidget {
-  const _BundledCoinsCommitConfig({Key? key}) : super(key: key);
+  const _BundledCoinsCommitConfig({super.key});
 
   // Get the value from `app_build/build_config.json` under the key
   // "coins"->"bundled_coins_repo_commit"
   Future<String> getBundledCoinsCommit() async {
+    final buildConfigPath =
+        'packages/komodo_defi_framework/app_build/build_config.json';
     final String commit = await rootBundle
-        .loadString('app_build/build_config.json')
+        .loadString(buildConfigPath)
         .then(
           (String jsonString) =>
               json.decode(jsonString) as Map<String, dynamic>,
@@ -59,7 +61,6 @@ class _BundledCoinsCommitConfig extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -87,7 +88,7 @@ class _BundledCoinsCommitConfig extends StatelessWidget {
 }
 
 class _ApiVersion extends StatelessWidget {
-  const _ApiVersion({Key? key}) : super(key: key);
+  const _ApiVersion({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -104,8 +105,10 @@ class _ApiVersion extends StatelessWidget {
               final String? commitHash = _tryParseCommitHash(snapshot.data);
               if (commitHash == null) return const SizedBox.shrink();
 
-              return SelectableText('${LocaleKeys.api.tr()}: $commitHash',
-                  style: _textStyle);
+              return SelectableText(
+                '${LocaleKeys.api.tr()}: $commitHash',
+                style: _textStyle,
+              );
             },
           ),
         ),
